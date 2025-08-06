@@ -55,6 +55,32 @@ def generate_report_md(company_name, business_summary, financial_summary=None, c
 
     return "\n".join(lines)
 
+def summarize_financial_section(text):
+    prompt = f"""
+以下の企業IR資料から、財務情報に関する要点を箇条書きで抽出してください。
+・売上・利益などの数値（可能な限り具体的に）
+・セグメント構成
+・成長率・その要因
+・特筆すべき財務トピック（減益／黒字化／構造改革など）
+・誤情報を避け、判断できない情報は「不明」と記載してください
+
+### IR資料本文：
+{text[:3000]}
+"""
+
+    client = OpenAI()
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": "あなたは財務アナリストです。"},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.3
+    )
+
+    return response.choices[0].message.content.strip()
+
+
 st.set_page_config(page_title="DDレポート生成", layout="centered")
 st.title("📊 DDレポート自動生成アプリ")
 
