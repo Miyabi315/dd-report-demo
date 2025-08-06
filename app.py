@@ -1,33 +1,44 @@
-# app.py - Step 1: UI base
-
 import streamlit as st
 from dotenv import load_dotenv
 import os
+import fitz  # PyMuPDF
 
-# .envからAPIキー読み込み（まだ未使用）
+# .envからAPIキー読み込み
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 st.set_page_config(page_title="DDレポート生成", layout="centered")
-st.title("📊 DDレポート自動生成アプリ（ベータ版）")
+st.title("📊 DDレポート自動生成アプリ")
 
-# 入力セクション
+# --- 企業情報入力 ---
 st.subheader("① 企業情報の入力")
-
-company_name = st.text_input("企業名を入力（例：ソニー株式会社）")
+company_name = st.text_input("企業名を入力")
 uploaded_pdf = st.file_uploader("またはIR資料（PDF）をアップロード", type=["pdf"])
 
-# オプション
+# --- オプションを横並び ---
 st.subheader("② オプション設定")
-include_financials = st.checkbox("財務情報も含める（上場企業のみ）", value=True)
-custom_topic = st.text_input("追加の観点（例：AI活用、ESG、海外展開）")
+col1, col2 = st.columns([1, 2])
+with col1:
+    include_financials = st.checkbox("財務情報も含める", value=True)
+with col2:
+    custom_topic = st.text_input("追加観点（AI活用、ESGなど）")
 
-# 実行ボタン
+# --- PDFテキスト抽出関数 ---
+def extract_text_from_pdf(uploaded_file):
+    with fitz.open(stream=uploaded_file.read(), filetype="pdf") as doc:
+        text = ""
+        for page in doc:
+            text += page.get_text()
+    return text
+
+# --- レポート生成ボタン ---
 st.subheader("③ レポート生成")
 if st.button("要約を開始"):
-    st.info("📝 この時点では要約処理は未実装です。次ステップで追加します。")
-    st.write("企業名：", company_name)
-    st.write("財務情報含む？：", include_financials)
-    st.write("追加観点：", custom_topic)
     if uploaded_pdf:
-        st.success(f"PDFファイル {uploaded_pdf.name} がアップロードされました。")
+        extracted_text = extract_text_from_pdf(uploaded_pdf)
+        st.success(f"✅ {uploaded_pdf.name} を読み取りました")
+        st.text_area("抽出テキスト（冒頭1000文字）", extracted_text[:1000], height=300)
+    elif company_name:
+        st.warning("⚠️ 現時点では企業名からのIR取得は未対応です。PDFをアップロードしてください。")
+    else:
+        st.error("❌ PDFまたは企業名を入力してください。")
