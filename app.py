@@ -38,6 +38,23 @@ def summarize_business_section(text, custom_topic=None):
 
     return response.choices[0].message.content.strip()
 
+def generate_report_md(company_name, business_summary, financial_summary=None, custom_topic=None):
+    lines = []
+    lines.append(f"# DDレポート：{company_name if company_name else '企業名未入力'}\n")
+
+    lines.append("## 事業要約")
+    lines.append(business_summary.strip() + "\n")
+
+    if financial_summary:
+        lines.append("## 財務要約")
+        lines.append(financial_summary.strip() + "\n")
+
+    if custom_topic:
+        lines.append(f"## 観点：{custom_topic}")
+        lines.append("*（この観点で要約を追加しました）*\n")
+
+    return "\n".join(lines)
+
 st.set_page_config(page_title="DDレポート生成", layout="centered")
 st.title("📊 DDレポート自動生成アプリ")
 
@@ -66,17 +83,46 @@ def extract_text_from_pdf(uploaded_file):
 st.subheader("③ レポート生成")
 if st.button("要約を開始"):
     if uploaded_pdf:
+        # 1. テキスト抽出
         extracted_text = extract_text_from_pdf(uploaded_pdf)
         st.success(f"✅ {uploaded_pdf.name} を読み取りました")
         st.text_area("抽出テキスト（冒頭1000文字）", extracted_text[:1000], height=300)
 
-        with st.spinner("GPTで要約中..."):
+        # 2. GPT 事業要約
+        with st.spinner("GPTで事業要約中..."):
             summary = summarize_business_section(
                 text=extracted_text,
                 custom_topic=custom_topic if custom_topic else None
             )
-            st.subheader("📝 要約結果")
+            st.subheader("📝 事業要約")
             st.markdown(summary)
+
+        # 3. GPT 財務要約（任意）
+        fin_summary = None
+        if include_financials:
+            with st.spinner("GPTで財務要約中..."):
+                fin_summary = summarize_financial_section(extracted_text)
+                st.subheader("💰 財務要約")
+                st.markdown(fin_summary)
+
+        # 4. Markdownレポート生成
+        report_md = generate_report_md(
+            company_name=company_name,
+            business_summary=summary,
+            financial_summary=fin_summary,
+            custom_topic=custom_topic
+        )
+
+        st.subheader("📄 生成レポート（Markdown）")
+        st.code(report_md, language="markdown")
+
+        # 5. ダウンロードボタン
+        st.download_button(
+            label="📥 Markdownレポートをダウンロード",
+            data=report_md,
+            file_name=f"{company_name or 'dd-report'}.md",
+            mime="text/markdown"
+        )
 
     elif company_name:
         st.warning("⚠️ 現時点では企業名からのIR取得は未対応です。PDFをアップロードしてください。")
