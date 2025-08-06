@@ -38,7 +38,7 @@ def summarize_business_section(text, custom_topic=None):
 
     return response.choices[0].message.content.strip()
 
-def generate_report_md(company_name, business_summary, financial_summary=None, custom_topic=None):
+def generate_report_md(company_name, business_summary, financial_summary=None, custom_summaries=None):
     lines = []
     lines.append(f"# DDレポート：{company_name if company_name else '企業名未入力'}\n")
 
@@ -49,9 +49,10 @@ def generate_report_md(company_name, business_summary, financial_summary=None, c
         lines.append("## 財務要約")
         lines.append(financial_summary.strip() + "\n")
 
-    if custom_topic:
-        lines.append(f"## 観点：{custom_topic}")
-        lines.append("*（この観点で要約を追加しました）*\n")
+    if custom_summaries:
+        for topic, summary in custom_summaries.items():
+            lines.append(f"## 観点：{topic}")
+            lines.append(summary.strip() + "\n")
 
     return "\n".join(lines)
 
@@ -65,7 +66,7 @@ def summarize_financial_section(text):
 ・誤情報を避け、判断できない情報は「不明」と記載してください
 
 ### IR資料本文：
-{text[:3000]}
+{text}
 """
 
     client = OpenAI()
@@ -95,7 +96,8 @@ col1, col2 = st.columns([1, 2])
 with col1:
     include_financials = st.checkbox("財務情報も含める", value=True)
 with col2:
-    custom_topic = st.text_input("追加観点（AI活用、ESGなど）")
+    custom_topics_raw = st.text_input("追加観点（カンマ区切り：AI活用, ESG, 海外展開 など）")
+    custom_topics = [t.strip() for t in custom_topics_raw.split(",") if t.strip()]
 
 # --- PDFテキスト抽出関数 ---
 def extract_text_from_pdf(uploaded_file):
@@ -118,10 +120,28 @@ if st.button("要約を開始"):
         with st.spinner("GPTで事業要約中..."):
             summary = summarize_business_section(
                 text=extracted_text,
-                custom_topic=custom_topic if custom_topic else None
+                custom_topic=None  # 観点は個別に回すので、ここはNoneでOK
             )
             st.subheader("📝 事業要約")
             st.markdown(summary)
+            
+        # 2.5. 観点ごとの要約
+        custom_summaries = {}
+        for topic in custom_topics:
+            with st.spinner(f"GPTで「{topic}」観点の要約中..."):
+                try:
+                    topic_summary = summarize_business_section(
+                        text=extracted_text,
+                        custom_topic=topic
+                    )
+                    custom_summaries[topic] = topic_summary
+                except Exception as e:
+                    custom_summaries[topic] = f"（エラー：{e}）"
+
+        # 表示
+        for topic, topic_summary in custom_summaries.items():
+            st.subheader(f"🔍 観点：{topic}")
+            st.markdown(topic_summary)
 
         # 3. GPT 財務要約（任意）
         fin_summary = None
@@ -136,7 +156,7 @@ if st.button("要約を開始"):
             company_name=company_name,
             business_summary=summary,
             financial_summary=fin_summary,
-            custom_topic=custom_topic
+            custom_summaries=custom_summaries
         )
 
         st.subheader("📄 生成レポート（Markdown）")
