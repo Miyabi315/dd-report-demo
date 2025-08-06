@@ -4,13 +4,35 @@ import os
 import fitz  # PyMuPDF
 import openai
 from openai import OpenAI
+from googlesearch import search
 
 # .envからAPIキー読み込み
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 
-from openai import OpenAI
+from googlesearch import search
+
+def find_ir_pdfs(company_name, max_results=5):
+    query = f"{company_name} IR PDF site:.co.jp"
+    urls = []
+    for url in search(query, num_results=10):
+        if url.lower().endswith(".pdf"):
+            urls.append(url)
+        if len(urls) >= max_results:
+            break
+    return urls
+
+import requests
+from io import BytesIO
+
+def download_pdf_content(url):
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            return BytesIO(response.content)
+    except Exception:
+        return None
 
 def summarize_business_section(text, custom_topic=None):
     prompt = f"""
@@ -171,6 +193,69 @@ if st.button("要約を開始"):
         )
 
     elif company_name:
-        st.warning("⚠️ 現時点では企業名からのIR取得は未対応です。PDFをアップロードしてください。")
+        st.info(f"🔎 「{company_name}」でIR資料を検索しています...")
+        urls = find_ir_pdfs(company_name)
+
+        if not urls:
+            st.error("❌ PDF形式のIR資料が見つかりませんでした。別のキーワードを試してください。")
+        else:
+            selected_url = st.selectbox("候補からIR資料を選択してください：", urls)
+            if st.button("選択したIR資料で要約実行"):
+                pdf_content = download_pdf_content(selected_url)
+                if pdf_content is None:
+                    st.error("❌ PDFのダウンロードに失敗しました。")
+                else:
+                    extracted_text = extract_text_from_pdf(pdf_content)
+                    st.success(f"✅ {selected_url} を取得し、テキスト抽出に成功しました。")
+                    st.text_area("抽出テキスト（冒頭1000文字）", extracted_text[:1000], height=300)
+
+                    with st.spinner("GPTで事業要約中..."):
+                        summary = summarize_business_section(
+                            text=extracted_text,
+                            custom_topic=None
+                        )
+                        st.subheader("📝 事業要約")
+                        st.markdown(summary)
+
+                    custom_summaries = {}
+                    for topic in custom_topics:
+                        with st.spinner(f"GPTで「{topic}」観点の要約中..."):
+                            try:
+                                topic_summary = summarize_business_section(
+                                    text=extracted_text,
+                                    custom_topic=topic
+                                )
+                                custom_summaries[topic] = topic_summary
+                            except Exception as e:
+                                custom_summaries[topic] = f"（エラー：{e}）"
+
+                    for topic, topic_summary in custom_summaries.items():
+                        st.subheader(f"🔍 観点：{topic}")
+                        st.markdown(topic_summary)
+
+                    fin_summary = None
+                    if include_financials:
+                        with st.spinner("GPTで財務要約中..."):
+                            fin_summary = summarize_financial_section(extracted_text)
+                            st.subheader("💰 財務要約")
+                            st.markdown(fin_summary)
+
+                    report_md = generate_report_md(
+                        company_name=company_name,
+                        business_summary=summary,
+                        financial_summary=fin_summary,
+                        custom_summaries=custom_summaries
+                    )
+
+                    st.subheader("📄 生成レポート（Markdown）")
+                    st.code(report_md, language="markdown")
+
+                    st.download_button(
+                        label="📥 Markdownレポートをダウンロード",
+                        data=report_md,
+                        file_name=f"{company_name or 'dd-report'}.md",
+                        mime="text/markdown"
+                    )
+                    
     else:
         st.error("❌ PDFまたは企業名を入力してください。")
